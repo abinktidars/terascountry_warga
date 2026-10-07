@@ -9,10 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "firebase": "^12.19.0",
     "vue": "^3.4.21"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
+    "firebase-tools": "^15.32.1",
     "vite": "^5.2.8"
   }
 }

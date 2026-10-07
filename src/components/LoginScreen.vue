@@ -41,8 +41,8 @@ const {
         </div>
 
         <div class="fields">
-          <label class="field">Nomor HP atau Email
-            <input :value="state.loginId" @input="setLoginId" placeholder="0812xxxxxxx" />
+          <label class="field">Email
+            <input :value="state.loginId" @input="setLoginId" placeholder="nama@terascountry.id" />
           </label>
           <label class="field">Kata Sandi
             <div class="pw-wrap">

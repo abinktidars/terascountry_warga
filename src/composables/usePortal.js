@@ -1,8 +1,10 @@
 import { reactive, computed } from 'vue'
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { doc, getDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { auth, db } from '../firebase'
 
 // ───────────────────────── constants ─────────────────────────
 const SENSITIVE = ['ipl', 'warga', 'piket', 'cctv', 'keluhan', 'surat']
-const ROLE_KEY = 'tc_portal_role_v2'
 const FEE = 250000
 const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
 const DUE_IDX = 9 // Oktober
@@ -38,12 +40,6 @@ const UNIT_DEFAULT_STATUS = {
   'C2 No. 16': 'Belum', 'C4 No. 09': 'Lunas', 'D2 No. 12': 'Menunggu', 'D3 No. 05': 'Belum'
 }
 
-// [blok, unit, nama, jml penghuni, status, phone]
-const W = [
-  ['A1', 'A1 No. 02', 'Budi Santoso', 4, 'Pemilik', '0812-1111-2020'], ['A1', 'A1 No. 05', 'Siti Rahmawati', 3, 'Pemilik', '0813-2222-3131'], ['A2', 'A2 No. 11', 'Hendra Wijaya', 2, 'Kontrak', '0857-3333-4242'],
-  ['B1', 'B1 No. 07', '—', 0, 'Kosong', '—'], ['B3', 'B3 No. 01', 'Rina Kusuma', 5, 'Pemilik', '0812-4444-5353'], ['C2', 'C2 No. 14', 'Andi Pratama', 4, 'Pemilik', '0811-5555-6464'],
-  ['C2', 'C2 No. 16', 'Dimas Saputra', 2, 'Kontrak', '0878-6666-7575'], ['C4', 'C4 No. 09', 'Lestari Dewi', 3, 'Pemilik', '0812-7777-8686'], ['D1', 'D1 No. 03', '—', 0, 'Kosong', '—'], ['D2', 'D2 No. 12', 'Agus Firmansyah', 4, 'Pemilik', '0813-8888-9797']
-]
 const ST = { Pemilik: ['Dihuni Pemilik', '#DDF1E4', '#0A5C2C'], Kontrak: ['Kontrak/Sewa', '#E4EAFF', '#22357A'], Kosong: ['Kosong', '#F3ECE2', '#6B5848'] }
 const WARGA_FILTER_MAP = { 'Semua': null, 'Dihuni Pemilik': 'Pemilik', 'Kontrak/Sewa': 'Kontrak', 'Kosong': 'Kosong' }
 
@@ -117,10 +113,6 @@ const PENGURUS_BIDANG = [
   { bidang: 'Ketua RT 01', nama: 'Bambang Haryanto' }, { bidang: 'Ketua RT 02', nama: 'Yusuf Maulana' }, { bidang: 'Ketua RT 03', nama: 'Andi Pratama' }
 ]
 
-const WARGA_STATS = [
-  { label: 'Total Unit', value: 320, color: '#A84503' }, { label: 'Dihuni Pemilik', value: 248, color: '#0A7C3A' },
-  { label: 'Kontrak/Sewa', value: 44, color: '#4D74FF' }, { label: 'Kosong', value: 28, color: '#B8A693' }
-]
 
 // ───────────────────────── reactive state (singleton) ─────────────────────────
 const state = reactive({
@@ -142,11 +134,17 @@ const state = reactive({
     { id: 3, date: '27 Sep 2026', aud: 'publik', title: 'Pemadaman listrik terjadwal', body: 'PLN akan melakukan pemeliharaan jaringan Sabtu, 11 Oktober pukul 09.00–13.00 untuk Blok C dan D.' },
     { id: 4, date: '20 Sep 2026', aud: 'warga', title: 'Pendataan ulang kendaraan warga', body: 'Mohon perbarui data kendaraan di pos security untuk penerbitan stiker akses baru.' }
   ],
-  units: {}
+  units: {},
+  residents: [],
+  wargaForm: { id: null, blok: '', unit: '', nama: '', jumlah: 0, status: 'Pemilik', phone: '' },
+  wargaFormOpen: false
 })
 
 let toastTimer = null
 let onResizeHandler = null
+let unsubscribeAuth = null
+let unsubscribeResidents = null
+let authInitialized = false
 
 // ───────────────────────── small helpers ─────────────────────────
 const rp = n => 'Rp ' + n.toLocaleString('id-ID')
@@ -158,8 +156,18 @@ function flash(msg) {
   toastTimer = setTimeout(() => { state.toast = '' }, 2400)
 }
 
-function saveRole(r) {
-  try { localStorage.setItem(ROLE_KEY, r) } catch (e) { /* ignore */ }
+function authErrorMessage(code) {
+  switch (code) {
+    case 'auth/invalid-credential':
+    case 'auth/invalid-email':
+    case 'auth/wrong-password':
+    case 'auth/user-not-found':
+      return 'Email atau kata sandi salah.'
+    case 'auth/too-many-requests':
+      return 'Terlalu banyak percobaan. Coba lagi nanti.'
+    default:
+      return 'Gagal masuk. Coba lagi.'
+  }
 }
 
 function applyRole(role) {
@@ -181,19 +189,45 @@ function go(p) {
   if (typeof window !== 'undefined') window.scrollTo(0, 0)
 }
 
-function initApp(startRole) {
+function watchResidents(active) {
+  if (unsubscribeResidents) { unsubscribeResidents(); unsubscribeResidents = null }
+  state.residents = []
+  if (!active) return
+  unsubscribeResidents = onSnapshot(collection(db, 'residents'), snap => {
+    state.residents = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+  }, () => { /* no access, keep empty */ })
+}
+
+function initApp() {
   onResizeHandler = () => { state.w = window.innerWidth }
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', onResizeHandler)
     onResizeHandler()
   }
-  let r = null
-  try { r = localStorage.getItem(ROLE_KEY) } catch (e) { /* ignore */ }
-  applyRole(r || startRole || 'public')
+  unsubscribeAuth = onAuthStateChanged(auth, async fbUser => {
+    watchResidents(!!fbUser)
+    const wasInitialized = authInitialized
+    authInitialized = true
+    if (!wasInitialized) {
+      if (!fbUser) { applyRole('public'); return }
+      try {
+        const snap = await getDoc(doc(db, 'users', fbUser.uid))
+        applyRole(snap.exists() ? snap.data().role : 'warga')
+      } catch (e) {
+        applyRole('public')
+      }
+      return
+    }
+    // perubahan berikutnya (login/logout) sudah ditangani langsung oleh doLogin()/logout();
+    // di sini cukup jaga-jaga kalau sesi berakhir di luar aksi logout eksplisit
+    if (!fbUser) applyRole('public')
+  })
 }
 
 function teardownApp() {
   if (typeof window !== 'undefined' && onResizeHandler) window.removeEventListener('resize', onResizeHandler)
+  if (unsubscribeAuth) unsubscribeAuth()
+  if (unsubscribeResidents) unsubscribeResidents()
   clearTimeout(toastTimer)
 }
 
@@ -274,8 +308,8 @@ const isAdminWarga = computed(() => state.page === 'adm_warga')
 // screen / navigation actions
 function openLogin() { state.screen = 'login'; state.redirect = null; state.drawer = false; state.loginErr = ''; if (typeof window !== 'undefined') window.scrollTo(0, 0) }
 function backHome() { state.screen = 'app'; state.page = state.role === 'pengurus' ? 'adm_dash' : 'beranda' }
-function logout() {
-  saveRole('public')
+async function logout() {
+  await signOut(auth)
   state.role = 'public'; state.page = 'beranda'; state.drawer = false; state.notif = false; state.screen = 'app'
   flash('Anda telah keluar')
 }
@@ -296,17 +330,23 @@ const pwIcon = computed(() => state.showPw ? 'visibility_off' : 'visibility')
 function togglePw() { state.showPw = !state.showPw }
 const loginBtn = computed(() => state.loginTab === 'pengurus' ? 'Masuk sebagai Pengurus' : 'Masuk')
 function fillDemo() {
-  state.loginId = state.loginTab === 'pengurus' ? 'ketua@terascountry.id' : '081155556464'
+  state.loginId = state.loginTab === 'pengurus' ? 'ketua@terascountry.id' : 'andi@terascountry.id'
   state.loginPw = 'demo1234'
   state.loginErr = ''
 }
-function doLogin() {
-  if (!state.loginId.trim() || !state.loginPw.trim()) { state.loginErr = 'Isi nomor HP/email dan kata sandi.'; return }
-  const r = state.loginTab
-  saveRole(r)
-  const page = r === 'pengurus' ? (state.redirect || 'adm_dash') : (state.redirect || 'beranda')
-  state.role = r; state.screen = 'app'; state.page = page; state.redirect = null; state.loginPw = ''
-  flash(r === 'pengurus' ? 'Masuk sebagai Pengurus' : 'Selamat datang, Andi')
+async function doLogin() {
+  if (!state.loginId.trim() || !state.loginPw.trim()) { state.loginErr = 'Isi email dan kata sandi.'; return }
+  state.loginErr = ''
+  try {
+    const cred = await signInWithEmailAndPassword(auth, state.loginId.trim(), state.loginPw)
+    const snap = await getDoc(doc(db, 'users', cred.user.uid))
+    const role = snap.exists() ? snap.data().role : 'warga'
+    const page = role === 'pengurus' ? (state.redirect || 'adm_dash') : (state.redirect || 'beranda')
+    state.role = role; state.screen = 'app'; state.page = page; state.redirect = null; state.loginPw = ''
+    flash(role === 'pengurus' ? 'Masuk sebagai Pengurus' : 'Selamat datang')
+  } catch (e) {
+    state.loginErr = authErrorMessage(e.code)
+  }
 }
 
 // drawer / notif
@@ -372,11 +412,71 @@ function setQ(e) { state.q = e.target.value }
 const wargaFilters = computed(() => Object.keys(WARGA_FILTER_MAP).map(l => ({ label: l, ...chip(state.wf === l), pick: () => { state.wf = l } })))
 const wargaList = computed(() => {
   const query = state.q.trim().toLowerCase()
-  return W.filter(w => (!WARGA_FILTER_MAP[state.wf] || w[4] === WARGA_FILTER_MAP[state.wf]) && (!query || (w[1] + ' ' + w[2]).toLowerCase().includes(query)))
-    .map(w => ({ blok: w[0], unit: w[1], nama: w[2] === '—' ? 'Belum berpenghuni' : w[2], jml: w[3] ? w[3] + ' penghuni' : 'Tidak ada penghuni', phone: w[5], status: ST[w[4]][0], bg: ST[w[4]][1], fg: ST[w[4]][2], edit: () => flash('Ubah data ' + w[1]) }))
+  return state.residents.filter(r => (!WARGA_FILTER_MAP[state.wf] || r.status === WARGA_FILTER_MAP[state.wf]) && (!query || (r.koridor + ' ' + r.blok + ' ' + r.nama).toLowerCase().includes(query)))
+    .map(r => ({
+      id: r.id, blok: 'K' + (r.koridor || '—'), unit: 'Koridor ' + (r.koridor || '—') + ' No. ' + r.blok,
+      nama: r.nama === '—' ? 'Belum berpenghuni' : r.nama,
+      jml: r.jumlah ? r.jumlah + ' penghuni' : 'Tidak ada penghuni',
+      phone: r.phone || '—',
+      status: (ST[r.status] || ST.Kosong)[0], bg: (ST[r.status] || ST.Kosong)[1], fg: (ST[r.status] || ST.Kosong)[2],
+      edit: () => openWargaForm(r),
+      del: () => deleteWarga(r.id)
+    }))
 })
 const wargaEmpty = computed(() => wargaList.value.length === 0)
-function addWarga() { flash('Form tambah warga dibuka') }
+const wargaStats = computed(() => [
+  { label: 'Total Unit', value: state.residents.length, color: '#A84503' },
+  { label: 'Dihuni Pemilik', value: state.residents.filter(r => r.status === 'Pemilik').length, color: '#0A7C3A' },
+  { label: 'Kontrak/Sewa', value: state.residents.filter(r => r.status === 'Kontrak').length, color: '#4D74FF' },
+  { label: 'Kosong', value: state.residents.filter(r => r.status === 'Kosong').length, color: '#B8A693' }
+])
+
+const KORIDOR_OPTS = [1, 2, 3, 4, 5]
+
+function openWargaForm(r) {
+  state.wargaForm = r
+    ? { id: r.id, blok: r.blok, koridor: r.koridor || 1, nama: r.nama === '—' ? '' : r.nama, jumlah: r.jumlah || 0, status: r.status, phone: r.phone === '—' ? '' : (r.phone || '') }
+    : { id: null, blok: '', koridor: 1, nama: '', jumlah: 0, status: 'Pemilik', phone: '' }
+  state.wargaFormOpen = true
+}
+function addWarga() { openWargaForm(null) }
+function closeWargaForm() { state.wargaFormOpen = false }
+const wargaForm = computed(() => state.wargaForm)
+function setWfBlok(e) { state.wargaForm = { ...state.wargaForm, blok: e.target.value } }
+function setWfNama(e) { state.wargaForm = { ...state.wargaForm, nama: e.target.value } }
+function setWfJumlah(e) { state.wargaForm = { ...state.wargaForm, jumlah: e.target.value } }
+function setWfPhone(e) { state.wargaForm = { ...state.wargaForm, phone: e.target.value } }
+const wfKoridorOpts = computed(() => KORIDOR_OPTS.map(k => ({
+  label: 'Koridor ' + k, bd: state.wargaForm.koridor === k ? '#A84503' : '#EFE6DA',
+  pick: () => { state.wargaForm = { ...state.wargaForm, koridor: k } }
+})))
+const wfStatusOpts = computed(() => Object.keys(ST).map(k => ({
+  label: ST[k][0], bd: state.wargaForm.status === k ? '#A84503' : '#EFE6DA',
+  pick: () => { state.wargaForm = { ...state.wargaForm, status: k } }
+})))
+const canSaveWarga = computed(() => !!state.wargaForm.blok.trim())
+const wargaFormTitle = computed(() => state.wargaForm.id ? 'Ubah Data Warga' : 'Tambah Warga')
+async function saveWargaForm() {
+  if (!canSaveWarga.value) { flash('Lengkapi nomor blok rumah'); return }
+  const f = state.wargaForm
+  const data = { blok: f.blok.trim(), koridor: Number(f.koridor) || 1, nama: f.nama.trim() || '—', jumlah: Number(f.jumlah) || 0, status: f.status, phone: f.phone.trim() || '—' }
+  try {
+    if (f.id) await updateDoc(doc(db, 'residents', f.id), data)
+    else await addDoc(collection(db, 'residents'), data)
+    state.wargaFormOpen = false
+    flash(f.id ? 'Data warga diperbarui' : 'Warga baru ditambahkan')
+  } catch (e) {
+    flash('Gagal menyimpan data warga')
+  }
+}
+async function deleteWarga(id) {
+  try {
+    await deleteDoc(doc(db, 'residents', id))
+    flash('Data warga dihapus')
+  } catch (e) {
+    flash('Gagal menghapus data warga')
+  }
+}
 
 // kegiatan
 const events = computed(() => EV.map(e => {
@@ -537,7 +637,9 @@ export function usePortal() {
     // beranda
     upcomingTop, pastEvents: pastEvents, onDuty, publicAnnouncements, wargaAnnouncements, admAnnouncements,
     // warga
-    wargaStats: WARGA_STATS, q, setQ, wargaList, wargaEmpty, wargaFilters, addWarga,
+    wargaStats, q, setQ, wargaList, wargaEmpty, wargaFilters, addWarga,
+    wargaForm, wargaFormOpen: computed(() => state.wargaFormOpen), wargaFormTitle, closeWargaForm,
+    setWfBlok, setWfNama, setWfJumlah, setWfPhone, wfKoridorOpts, wfStatusOpts, canSaveWarga, saveWargaForm,
     // paguyuban
     pengurusInti: PENGURUS_INTI, pengurusBidang: PENGURUS_BIDANG,
     // kegiatan

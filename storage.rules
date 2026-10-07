@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // bukti transfer IPL: tiap warga hanya boleh unggah ke folder miliknya sendiri
+    match /payments/{uid}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // foto lampiran keluhan: siapa saja yang login boleh unggah & lihat
+    match /complaints/{uid}/{fileName} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && request.auth.uid == uid
+        && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -2,6 +2,7 @@
 import { usePortal } from '../composables/usePortal'
 import logoTc from '../assets/logo-tc.png'
 import PayModal from './PayModal.vue'
+import WargaFormModal from './WargaFormModal.vue'
 
 import BerandaPublic from './pages/BerandaPublic.vue'
 import BerandaWarga from './pages/BerandaWarga.vue'
@@ -157,6 +158,7 @@ const {
     </div>
 
     <PayModal />
+    <WargaFormModal />
   </div>
 </template>
 

@@ -35,6 +35,7 @@ const { wargaStats, state, setQ, isAdminWarga, addWarga, wargaFilters, wargaList
         <span v-if="isAdminWarga" class="row-phone">{{ w.phone }}</span>
         <span class="row-status" :style="{ background: w.bg, color: w.fg }">{{ w.status }}</span>
         <button v-if="isAdminWarga" class="edit-btn icon" aria-label="Ubah" @click="w.edit">edit</button>
+        <button v-if="isAdminWarga" class="edit-btn icon" aria-label="Hapus" @click="w.del">delete</button>
       </div>
       <div v-if="wargaEmpty" class="empty">Tidak ada data yang cocok.</div>
     </div>
