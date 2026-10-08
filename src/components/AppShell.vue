@@ -1,4 +1,5 @@
 <script setup>
+import { ref, watch } from 'vue'
 import { usePortal } from '../composables/usePortal'
 import logoTc from '../assets/logo-tc.png'
 import PayModal from './PayModal.vue'
@@ -20,6 +21,8 @@ import AdmDash from './pages/AdmDash.vue'
 import AdmIpl from './pages/AdmIpl.vue'
 import AdmKeluhan from './pages/AdmKeluhan.vue'
 import AdmInfo from './pages/AdmInfo.vue'
+import AdmPaguyuban from './pages/AdmPaguyuban.vue'
+import PaguyubanFormModal from './PaguyubanFormModal.vue'
 
 const {
   state, isDesktop, isCompact, roleLabel, user, isPublic, isLogged, isAdmin, logout, openLogin,
@@ -27,11 +30,17 @@ const {
   showPublicHome, showWargaHome, showWargaData, is,
   bottomNav, drawerOpen, closeDrawer, stop
 } = usePortal()
+
+const collapsed = ref(false)
+try { collapsed.value = localStorage.getItem('sidebarCollapsed') === '1' } catch {}
+watch(collapsed, (v) => {
+  try { localStorage.setItem('sidebarCollapsed', v ? '1' : '0') } catch {}
+})
 </script>
 
 <template>
   <div class="shell">
-    <aside v-if="isDesktop" class="sidebar">
+    <aside v-if="isDesktop" class="sidebar" :class="{ collapsed }">
       <div class="brand">
         <img :src="logoTc" alt="Teras Country Warga" class="brand-logo" />
         <div class="brand-text">
@@ -42,7 +51,7 @@ const {
       <nav class="nav">
         <div v-for="(g, gi) in navGroups" :key="gi" class="nav-group">
           <span v-if="g.title" class="nav-group-title">{{ g.title }}</span>
-          <button v-for="(item, ii) in g.items" :key="ii" class="nav-item" :style="{ background: item.navBg, color: item.navFg, fontWeight: item.navW }" @click="item.go">
+          <button v-for="(item, ii) in g.items" :key="ii" class="nav-item" :title="collapsed ? item.label : undefined" :style="{ background: item.navBg, color: item.navFg, fontWeight: item.navW }" @click="item.go">
             <span class="icon">{{ item.icon }}</span>
             <span class="nav-label">{{ item.label }}</span>
             <span v-if="item.locked" class="icon nav-lock">lock</span>
@@ -68,6 +77,9 @@ const {
 
     <div class="content-col">
       <header class="header">
+        <button v-if="isDesktop" class="header-icon-btn" :aria-label="collapsed ? 'Perluas sidebar' : 'Ciutkan sidebar'" :title="collapsed ? 'Perluas sidebar' : 'Ciutkan sidebar'" @click="collapsed = !collapsed">
+          <span class="icon">{{ collapsed ? 'menu' : 'menu_open' }}</span>
+        </button>
         <img v-if="isCompact" :src="logoTc" alt="Teras Country Warga" class="header-logo" />
         <div class="header-title">
           <span class="header-crumb">{{ crumb }}</span>
@@ -112,6 +124,7 @@ const {
         <AdmDash v-if="is.adm_dash" />
         <AdmIpl v-if="is.adm_ipl" />
         <AdmKeluhan v-if="is.adm_keluhan" />
+        <AdmPaguyuban v-if="is.adm_paguyuban" />
         <AdmInfo v-if="is.adm_info" />
       </main>
     </div>
@@ -159,6 +172,7 @@ const {
 
     <PayModal />
     <WargaFormModal />
+    <PaguyubanFormModal />
   </div>
 </template>
 
@@ -169,6 +183,7 @@ const {
 }
 .sidebar {
   width: 264px;
+  transition: width 0.2s ease;
   flex-shrink: 0;
   position: sticky;
   top: 0;
@@ -181,6 +196,19 @@ const {
   flex-direction: column;
   gap: 20px;
 }
+.sidebar.collapsed { width: 76px; padding: 24px 10px; overflow-x: hidden; }
+.sidebar.collapsed .brand { justify-content: center; padding: 0; }
+.sidebar.collapsed .brand-text,
+.sidebar.collapsed .nav-label,
+.sidebar.collapsed .nav-soon,
+.sidebar.collapsed .nav-lock,
+.sidebar.collapsed .nav-group-title,
+.sidebar.collapsed .sidebar-cta,
+.sidebar.collapsed .user-info,
+.sidebar.collapsed .user-logout { display: none; }
+.sidebar.collapsed .nav-item { justify-content: center; padding: 10px 0; position: relative; }
+.sidebar.collapsed .nav-badge { position: absolute; top: 2px; right: 6px; min-width: 16px; font-size: 10px; padding: 1px 4px; }
+.sidebar.collapsed .sidebar-user { padding: 8px 0; justify-content: center; background: none; }
 .brand {
   display: flex;
   align-items: center;

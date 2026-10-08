@@ -24,7 +24,7 @@ const MODS = [
   ['sosial', 'Info Sosial', 'diversity_3', 'Rekomendasi warga', '#7048D6', '#EEE8FD']
 ]
 
-const ADM_TITLES = { adm_dash: 'Dashboard Pengurus', adm_ipl: 'Keuangan IPL', adm_keluhan: 'Kelola Keluhan', adm_warga: 'Kelola Data Warga', adm_info: 'Pengumuman' }
+const ADM_TITLES = { adm_dash: 'Dashboard Pengurus', adm_ipl: 'Keuangan IPL', adm_keluhan: 'Kelola Keluhan', adm_warga: 'Kelola Data Warga', adm_paguyuban: 'Kelola Paguyuban', adm_info: 'Pengumuman' }
 
 // [blok, unit, nama]  (default status is derived separately so the C2 No. 14
 // special-case from the original prototype — which flips with paidUpTo — can
@@ -110,8 +110,15 @@ const PENGURUS_INTI = [
 const PENGURUS_BIDANG = [
   { bidang: 'Koordinator Keamanan', nama: 'Agus Firmansyah' }, { bidang: 'Koordinator Kebersihan & Lingkungan', nama: 'Budi Santoso' },
   { bidang: 'Koordinator Sosial & Kerohanian', nama: 'Siti Rahmawati' }, { bidang: 'Koordinator Olahraga & Pemuda', nama: 'Hendra Wijaya' },
-  { bidang: 'Ketua RT 01', nama: 'Bambang Haryanto' }, { bidang: 'Ketua RT 02', nama: 'Yusuf Maulana' }, { bidang: 'Ketua RT 03', nama: 'Andi Pratama' }
 ]
+const PG_GROUPS = { inti: 'Struktur Kepengurusan', koridor: 'Ketua Koridor', bidang: 'Koordinator Bidang' }
+const PG_COLORS = [['#A84503', '#F7EFE5'], ['#7048D6', '#EEE8FD'], ['#3554D1', '#E4EAFF'], ['#0A7C3A', '#DDF1E4']]
+// data awal paguyuban (dipakai sebagai tampilan default & tombol "Isi data awal")
+const PG_DEFAULTS = [
+  ...PENGURUS_INTI.map(p => ({ group: 'inti', jabatan: p.jabatan, nama: p.nama, blok: p.blok })),
+  ...[1, 2, 3, 4, 5].map(n => ({ group: 'koridor', jabatan: 'Ketua Koridor ' + n, nama: '—', blok: '' })),
+  ...PENGURUS_BIDANG.map(b => ({ group: 'bidang', jabatan: b.bidang, nama: b.nama, blok: '' }))
+].map((d, i) => ({ ...d, order: i, id: 'default-' + i }))
 
 
 // ───────────────────────── reactive state (singleton) ─────────────────────────
@@ -137,13 +144,17 @@ const state = reactive({
   units: {},
   residents: [],
   wargaForm: { id: null, blok: '', unit: '', nama: '', jumlah: 0, status: 'Pemilik', phone: '' },
-  wargaFormOpen: false
+  wargaFormOpen: false,
+  paguyuban: [], pgLoaded: false,
+  pgForm: { id: null, group: 'inti', jabatan: '', nama: '', blok: '', order: 0 },
+  pgFormOpen: false
 })
 
 let toastTimer = null
 let onResizeHandler = null
 let unsubscribeAuth = null
 let unsubscribeResidents = null
+let unsubscribePaguyuban = null
 let authInitialized = false
 
 // ───────────────────────── small helpers ─────────────────────────
@@ -198,12 +209,21 @@ function watchResidents(active) {
   }, () => { /* no access, keep empty */ })
 }
 
+function watchPaguyuban() {
+  if (unsubscribePaguyuban) unsubscribePaguyuban()
+  unsubscribePaguyuban = onSnapshot(collection(db, 'paguyuban'), snap => {
+    state.paguyuban = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+    state.pgLoaded = true
+  }, () => { state.pgLoaded = true })
+}
+
 function initApp() {
   onResizeHandler = () => { state.w = window.innerWidth }
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', onResizeHandler)
     onResizeHandler()
   }
+  watchPaguyuban()
   unsubscribeAuth = onAuthStateChanged(auth, async fbUser => {
     watchResidents(!!fbUser)
     const wasInitialized = authInitialized
@@ -228,6 +248,7 @@ function teardownApp() {
   if (typeof window !== 'undefined' && onResizeHandler) window.removeEventListener('resize', onResizeHandler)
   if (unsubscribeAuth) unsubscribeAuth()
   if (unsubscribeResidents) unsubscribeResidents()
+  if (unsubscribePaguyuban) unsubscribePaguyuban()
   clearTimeout(toastTimer)
 }
 
@@ -272,7 +293,7 @@ function mk(key, label, icon, extra) {
 const portalItems = computed(() => MODS.map(m => mk(m[0], m[1], m[2])))
 const navGroups = computed(() => isAdmin.value
   ? [
-      { title: 'Panel Pengurus', items: [mk('adm_dash', 'Dashboard', 'space_dashboard'), mk('adm_ipl', 'Keuangan IPL', 'account_balance_wallet', { badge: pendingCount.value || false }), mk('adm_keluhan', 'Kelola Keluhan', 'support_agent', { badge: openComplaints.value || false }), mk('adm_warga', 'Kelola Warga', 'manage_accounts'), mk('adm_info', 'Pengumuman', 'campaign')] },
+      { title: 'Panel Pengurus', items: [mk('adm_dash', 'Dashboard', 'space_dashboard'), mk('adm_ipl', 'Keuangan IPL', 'account_balance_wallet', { badge: pendingCount.value || false }), mk('adm_keluhan', 'Kelola Keluhan', 'support_agent', { badge: openComplaints.value || false }), mk('adm_warga', 'Kelola Warga', 'manage_accounts'), mk('adm_paguyuban', 'Kelola Paguyuban', 'account_tree'), mk('adm_info', 'Pengumuman', 'campaign')] },
       { title: 'Portal Warga', items: portalItems.value }
     ]
   : [{ title: '', items: portalItems.value }])
@@ -478,6 +499,79 @@ async function deleteWarga(id) {
   }
 }
 
+// paguyuban
+const pgIsDefault = computed(() => state.paguyuban.length === 0)
+const pgSource = computed(() => pgIsDefault.value ? PG_DEFAULTS : state.paguyuban)
+function pgInitials(d) {
+  if (d.group === 'koridor') return 'K' + ((d.jabatan || '').match(/\d+/) || ['?'])[0]
+  const nm = d.nama && d.nama !== '—' ? d.nama.replace(/^H\.\s*/, '') : d.jabatan || '?'
+  return nm.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0].toUpperCase()).join('')
+}
+function pgItems(group) {
+  return pgSource.value.filter(d => d.group === group).sort((a, b) => (a.order || 0) - (b.order || 0)).map((d, i) => {
+    const [color, tint] = group === 'inti' ? PG_COLORS[i % PG_COLORS.length] : PG_COLORS[0]
+    return {
+      id: d.id, ini: pgInitials(d), nama: d.nama, jabatan: d.jabatan, blok: d.blok || '', bidang: d.jabatan, color, tint,
+      edit: () => openPgForm(d), del: () => deletePg(d)
+    }
+  })
+}
+const pgInti = computed(() => pgItems('inti'))
+const pgKoridor = computed(() => pgItems('koridor'))
+const pgBidang = computed(() => pgItems('bidang'))
+
+function openPgForm(d, group) {
+  state.pgForm = d && d.id && !String(d.id).startsWith('default-')
+    ? { id: d.id, group: d.group, jabatan: d.jabatan || '', nama: d.nama === '—' ? '' : (d.nama || ''), blok: d.blok || '', order: d.order || 0 }
+    : { id: null, group: d ? d.group : (group || 'inti'), jabatan: d ? d.jabatan : '', nama: '', blok: '', order: d ? d.order : 0 }
+  state.pgFormOpen = true
+}
+function addPg(group) { openPgForm(null, group) }
+function closePgForm() { state.pgFormOpen = false }
+const pgForm = computed(() => state.pgForm)
+function setPgField(key, e) { state.pgForm = { ...state.pgForm, [key]: e.target.value } }
+const setPgJabatan = e => setPgField('jabatan', e)
+const setPgNama = e => setPgField('nama', e)
+const setPgBlok = e => setPgField('blok', e)
+const pgGroupOpts = computed(() => Object.keys(PG_GROUPS).map(k => ({
+  label: PG_GROUPS[k], bd: state.pgForm.group === k ? '#A84503' : '#EFE6DA',
+  pick: () => { state.pgForm = { ...state.pgForm, group: k } }
+})))
+const pgShowBlok = computed(() => state.pgForm.group !== 'bidang')
+const canSavePg = computed(() => !!state.pgForm.jabatan.trim())
+const pgFormTitle = computed(() => state.pgForm.id ? 'Ubah Pengurus' : 'Tambah Pengurus')
+async function savePgForm() {
+  if (!canSavePg.value) { flash('Lengkapi jabatan'); return }
+  const f = state.pgForm
+  const order = f.id ? f.order : Math.max(-1, ...state.paguyuban.map(d => d.order || 0)) + 1
+  const data = { group: f.group, jabatan: f.jabatan.trim(), nama: f.nama.trim() || '—', blok: f.group === 'bidang' ? '' : f.blok.trim(), order }
+  try {
+    if (f.id) await updateDoc(doc(db, 'paguyuban', f.id), data)
+    else await addDoc(collection(db, 'paguyuban'), data)
+    state.pgFormOpen = false
+    flash(f.id ? 'Data pengurus diperbarui' : 'Pengurus ditambahkan')
+  } catch (e) {
+    flash('Gagal menyimpan data pengurus')
+  }
+}
+async function deletePg(d) {
+  if (typeof window !== 'undefined' && !window.confirm('Hapus ' + (d.jabatan || 'data ini') + '?')) return
+  try {
+    await deleteDoc(doc(db, 'paguyuban', d.id))
+    flash('Data pengurus dihapus')
+  } catch (e) {
+    flash('Gagal menghapus data pengurus')
+  }
+}
+async function seedPg() {
+  try {
+    await Promise.all(PG_DEFAULTS.map(({ id, ...d }) => addDoc(collection(db, 'paguyuban'), d)))
+    flash('Data awal paguyuban dimuat')
+  } catch (e) {
+    flash('Gagal memuat data awal')
+  }
+}
+
 // kegiatan
 const events = computed(() => EV.map(e => {
   const j = !!state.joined[e[0]]
@@ -641,7 +735,10 @@ export function usePortal() {
     wargaForm, wargaFormOpen: computed(() => state.wargaFormOpen), wargaFormTitle, closeWargaForm,
     setWfBlok, setWfNama, setWfJumlah, setWfPhone, wfKoridorOpts, wfStatusOpts, canSaveWarga, saveWargaForm,
     // paguyuban
-    pengurusInti: PENGURUS_INTI, pengurusBidang: PENGURUS_BIDANG,
+    pengurusInti: pgInti, ketuaKoridor: pgKoridor, pengurusBidang: pgBidang,
+    pgIsDefault, addPg, seedPg, pgGroups: PG_GROUPS,
+    pgFormOpen: computed(() => state.pgFormOpen), pgForm, pgFormTitle, closePgForm, pgGroupOpts, pgShowBlok,
+    setPgJabatan, setPgNama, setPgBlok, canSavePg, savePgForm,
     // kegiatan
     events,
     // piket

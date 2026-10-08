@@ -2,22 +2,20 @@
 import { usePortal } from '../../composables/usePortal'
 import logoTc from '../../assets/logo-tc.png'
 
-const { pengurusInti, pengurusBidang } = usePortal()
-
-const ketuaKoridor = [1, 2, 3, 4, 5].map(n => ({ ini: 'K' + n, nama: '—', jabatan: 'Ketua Koridor ' + n, blok: '', color: '#A84503', tint: '#F7EFE5' }))
+const { pengurusInti, ketuaKoridor, pengurusBidang } = usePortal()
 </script>
 
 <template>
   <section class="intro-card">
     <img :src="logoTc" alt="Teras Country Warga" class="intro-logo" />
     <div class="intro-text">
-      <span class="intro-title">Paguyuban Warga Teras Country</span>
-      <span class="intro-desc">Wadah warga untuk mengelola keamanan, kebersihan, fasilitas, dan kegiatan sosial di lingkungan perumahan. Periode kepengurusan 2025–2028.</span>
+      <span class="intro-title">Struktur Paguyuban Teras Country Tahun 2026-2029 </span>
+      <span class="intro-desc">Wadah warga untuk mengelola keamanan, kebersihan, fasilitas, dan kegiatan sosial di lingkungan perumahan.</span>
     </div>
   </section>
 
   <section class="section">
-    <span class="section-title">Pengurus Inti</span>
+    <span class="section-title">Struktur Kepengurusan</span>
     <div class="inti-grid">
       <div v-for="(p, pi) in pengurusInti" :key="pi" class="inti-card">
         <div class="inti-avatar" :style="{ background: p.tint, color: p.color }">{{ p.ini }}</div>
@@ -45,11 +43,14 @@ const ketuaKoridor = [1, 2, 3, 4, 5].map(n => ({ ini: 'K' + n, nama: '—', jaba
   </section>
 
   <section class="section">
-    <span class="section-title">Koordinator Bidang & RT</span>
-    <div class="bidang-card">
-      <div v-for="(b, bi) in pengurusBidang" :key="bi" class="bidang-row">
-        <span class="bidang-label">{{ b.bidang }}</span>
-        <span class="bidang-nama">{{ b.nama }}</span>
+    <span class="section-title">Koordinator Bidang</span>
+    <div class="inti-grid">
+      <div v-for="(b, bi) in pengurusBidang" :key="bi" class="inti-card">
+        <div class="inti-avatar" :style="{ background: b.tint, color: b.color }">{{ b.ini }}</div>
+        <div class="inti-text">
+          <span class="inti-nama">{{ b.nama }}</span>
+          <span class="inti-jabatan" :style="{ color: b.color }">{{ b.jabatan }}</span>
+        </div>
       </div>
     </div>
   </section>
@@ -121,26 +122,4 @@ const ketuaKoridor = [1, 2, 3, 4, 5].map(n => ({ ini: 'K' + n, nama: '—', jaba
 .inti-nama { font-size: 15px; font-weight: 700; }
 .inti-jabatan { font-size: 12px; font-weight: 700; }
 .inti-blok { font-size: 12px; color: #8A7563; }
-
-.bidang-card {
-  background: #fff;
-  border: 1px solid #EFE6DA;
-  border-radius: 20px;
-  padding: 4px 20px;
-}
-.bidang-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 0;
-  border-top: 1px solid #F3ECE2;
-  flex-wrap: wrap;
-}
-.bidang-label {
-  flex: 1;
-  min-width: 160px;
-  font-size: 14px;
-  color: #5E4B3C;
-}
-.bidang-nama { font-size: 14px; font-weight: 700; }
 </style>
