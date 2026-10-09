@@ -5,29 +5,11 @@ import logoTc from '../assets/logo-tc.png'
 import PayModal from './PayModal.vue'
 import WargaFormModal from './WargaFormModal.vue'
 
-import BerandaPublic from './pages/BerandaPublic.vue'
-import BerandaWarga from './pages/BerandaWarga.vue'
-import Ipl from './pages/Ipl.vue'
-import Warga from './pages/Warga.vue'
-import Paguyuban from './pages/Paguyuban.vue'
-import Kegiatan from './pages/Kegiatan.vue'
-import Piket from './pages/Piket.vue'
-import Cctv from './pages/Cctv.vue'
-import Keluhan from './pages/Keluhan.vue'
-import Surat from './pages/Surat.vue'
-import Aset from './pages/Aset.vue'
-import Sosial from './pages/Sosial.vue'
-import AdmDash from './pages/AdmDash.vue'
-import AdmIpl from './pages/AdmIpl.vue'
-import AdmKeluhan from './pages/AdmKeluhan.vue'
-import AdmInfo from './pages/AdmInfo.vue'
-import AdmPaguyuban from './pages/AdmPaguyuban.vue'
 import PaguyubanFormModal from './PaguyubanFormModal.vue'
 
 const {
-  state, isDesktop, isCompact, roleLabel, user, isPublic, isLogged, isAdmin, logout, openLogin,
+  state, go, isDesktop, isCompact, roleLabel, user, isPublic, isLogged, isAdmin, logout, openLogin,
   navGroups, pageTitle, crumb, toggleNotif, notifOpen, notifs, openDrawer,
-  showPublicHome, showWargaHome, showWargaData, is,
   bottomNav, drawerOpen, closeDrawer, stop
 } = usePortal()
 
@@ -66,11 +48,13 @@ watch(collapsed, (v) => {
         <button class="cta-btn" @click="openLogin">Masuk Warga</button>
       </div>
       <div v-if="isLogged" class="sidebar-user">
-        <div class="user-avatar" :style="{ background: user.color }">{{ user.ini }}</div>
-        <div class="user-info">
-          <span class="user-name">{{ user.name }}</span>
-          <span class="user-sub">{{ user.sub }}</span>
-        </div>
+        <button class="user-profile-btn" title="Profil saya" @click="go('profil')">
+          <div class="user-avatar" :style="{ background: user.color }">{{ user.ini }}</div>
+          <div class="user-info">
+            <span class="user-name">{{ user.name }}</span>
+            <span class="user-sub">{{ user.sub }}</span>
+          </div>
+        </button>
         <button class="user-logout icon" aria-label="Keluar" title="Keluar" @click="logout">logout</button>
       </div>
     </aside>
@@ -109,23 +93,7 @@ watch(collapsed, (v) => {
       </div>
 
       <main class="main">
-        <BerandaPublic v-if="showPublicHome" />
-        <BerandaWarga v-if="showWargaHome" />
-        <Ipl v-if="is.ipl" />
-        <Warga v-if="showWargaData" />
-        <Paguyuban v-if="is.paguyuban" />
-        <Kegiatan v-if="is.kegiatan" />
-        <Piket v-if="is.piket" />
-        <Cctv v-if="is.cctv" />
-        <Keluhan v-if="is.keluhan" />
-        <Surat v-if="is.surat" />
-        <Aset v-if="is.aset" />
-        <Sosial v-if="is.sosial" />
-        <AdmDash v-if="is.adm_dash" />
-        <AdmIpl v-if="is.adm_ipl" />
-        <AdmKeluhan v-if="is.adm_keluhan" />
-        <AdmPaguyuban v-if="is.adm_paguyuban" />
-        <AdmInfo v-if="is.adm_info" />
+        <router-view />
       </main>
     </div>
 
@@ -160,11 +128,13 @@ watch(collapsed, (v) => {
         </nav>
         <button v-if="isPublic" class="drawer-login" @click="openLogin">Masuk Warga</button>
         <div v-if="isLogged" class="drawer-user">
-          <div class="user-avatar" :style="{ background: user.color }">{{ user.ini }}</div>
-          <div class="user-info">
-            <span class="user-name">{{ user.name }}</span>
-            <span class="user-sub">{{ user.sub }}</span>
-          </div>
+          <button class="user-profile-btn" @click="go('profil')">
+            <div class="user-avatar" :style="{ background: user.color }">{{ user.ini }}</div>
+            <div class="user-info">
+              <span class="user-name">{{ user.name }}</span>
+              <span class="user-sub">{{ user.sub }}</span>
+            </div>
+          </button>
           <button class="drawer-logout" @click="logout">Keluar</button>
         </div>
       </div>
@@ -328,6 +298,21 @@ watch(collapsed, (v) => {
   font-weight: 700;
   font-size: 13px;
 }
+.user-profile-btn {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.sidebar.collapsed .user-profile-btn { flex: 0; }
 .user-info {
   flex: 1;
   display: flex;

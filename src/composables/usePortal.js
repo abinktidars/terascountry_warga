@@ -1,10 +1,12 @@
 import { reactive, computed } from 'vue'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
-import { doc, getDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
 import { auth, db } from '../firebase'
+import { router, routes } from '../router'
 
 // ───────────────────────── constants ─────────────────────────
-const SENSITIVE = ['ipl', 'warga', 'piket', 'cctv', 'keluhan', 'surat']
+// menu terkunci untuk publik = route non-admin dengan meta.auth (lihat router/index.js)
+const SENSITIVE = routes.filter(r => r.meta?.auth && !r.meta.admin).map(r => r.name)
 const FEE = 250000
 const MONTHS = ['Januari', 'Februari', 'Maret', 'April', 'Mei', 'Juni', 'Juli', 'Agustus', 'September', 'Oktober', 'November', 'Desember']
 const DUE_IDX = 9 // Oktober
@@ -13,6 +15,7 @@ const DUE_IDX = 9 // Oktober
 const MODS = [
   ['beranda', 'Beranda', 'home', '', '#A84503', '#F7EFE5'],
   ['ipl', 'Pembayaran IPL', 'payments', 'Bayar iuran', '#D45A1A', '#FEEBDD'],
+  ['keuangan', 'Laporan Keuangan', 'receipt_long', 'Alokasi dana bulanan', '#0A7C3A', '#DDF1E4'],
   ['warga', 'Data Warga', 'groups', 'Status huni', '#3554D1', '#E4EAFF'],
   ['paguyuban', 'Paguyuban', 'account_tree', 'Struktur pengurus', '#7048D6', '#EEE8FD'],
   ['kegiatan', 'Kegiatan Warga', 'event', 'Agenda komplek', '#B8325F', '#FDE6EE'],
@@ -21,9 +24,11 @@ const MODS = [
   ['keluhan', 'Lapor Keluhan', 'campaign', 'Sampaikan masalah', '#C2410C', '#FDE9DC'],
   ['surat', 'Unduh Surat', 'description', 'Pengantar RT/RW', '#3554D1', '#E4EAFF'],
   ['aset', 'Aset Komplek', 'inventory_2', 'Fasilitas & inventaris', '#0A7C3A', '#DDF1E4'],
-  ['sosial', 'Info Sosial', 'diversity_3', 'Rekomendasi warga', '#7048D6', '#EEE8FD']
+  ['sosial', 'Info Sosial', 'diversity_3', 'Rekomendasi warga', '#7048D6', '#EEE8FD'],
+  ['faq', 'FAQ', 'help', 'Tata tertib & info IPL', '#3554D1', '#E4EAFF']
 ]
 
+const PAGE_TITLES = { profil: 'Profil Saya' }
 const ADM_TITLES = { adm_dash: 'Dashboard Pengurus', adm_ipl: 'Keuangan IPL', adm_keluhan: 'Kelola Keluhan', adm_warga: 'Kelola Data Warga', adm_paguyuban: 'Kelola Paguyuban', adm_info: 'Pengumuman' }
 
 // [blok, unit, nama]  (default status is derived separately so the C2 No. 14
@@ -147,7 +152,8 @@ const state = reactive({
   wargaFormOpen: false,
   paguyuban: [], pgLoaded: false,
   pgForm: { id: null, group: 'inti', jabatan: '', nama: '', blok: '', order: 0 },
-  pgFormOpen: false
+  pgFormOpen: false,
+  profile: null, profileForm: { name: '', phone: '', unit: '', jabatan: '' }, profileSaving: false
 })
 
 let toastTimer = null
@@ -181,24 +187,48 @@ function authErrorMessage(code) {
   }
 }
 
-function applyRole(role) {
-  if (role === 'login') { state.role = 'public'; state.screen = 'login'; state.page = 'beranda'; return }
-  if (!['public', 'warga', 'pengurus'].includes(role)) role = 'public'
-  state.role = role
-  state.screen = 'app'
-  state.page = role === 'pengurus' ? 'adm_dash' : 'beranda'
+async function loadProfile(uid) {
+  const snap = await getDoc(doc(db, 'users', uid))
+  state.profile = snap.exists() ? snap.data() : null
+  return state.profile
 }
 
-function go(p) {
-  if (state.role === 'public' && SENSITIVE.includes(p)) {
-    state.screen = 'login'; state.redirect = p; state.drawer = false; state.loginErr = ''; state.loginTab = 'warga'
-    if (typeof window !== 'undefined') window.scrollTo(0, 0)
-    return
-  }
-  if (p.startsWith('adm_') && state.role !== 'pengurus') return
-  state.page = p; state.drawer = false; state.notif = false
-  if (typeof window !== 'undefined') window.scrollTo(0, 0)
+const homeFor = role => role === 'pengurus' ? 'adm_dash' : 'beranda'
+
+function applyRole(role) {
+  if (!['public', 'warga', 'pengurus'].includes(role)) role = 'public'
+  state.role = role
+  const cur = router.currentRoute.value
+  // landing awal: pengurus yang membuka "/" diarahkan ke dashboard; sesi berakhir di halaman terlindungi → beranda
+  if (role === 'pengurus' && cur.name === 'beranda') router.replace({ name: 'adm_dash' })
+  else if (role === 'public' && (cur.meta.auth || cur.meta.admin)) router.replace({ name: 'beranda' })
 }
+
+// arahkan ke login dan ingat tujuan awal
+function requireLogin(name) {
+  state.redirect = name || null; state.loginErr = ''; state.loginTab = 'warga'; state.drawer = false
+  router.push({ name: 'login' })
+}
+
+function go(p) { router.push({ name: p }) }
+
+// ── guard: tunggu status auth awal, lalu cek login/role per route ──
+let resolveAuthReady
+const authReady = new Promise(r => { resolveAuthReady = r })
+
+router.beforeEach(async to => {
+  await authReady
+  if (to.name === 'login') return state.role === 'public' ? true : { name: homeFor(state.role) }
+  if (to.meta.auth && state.role === 'public') { state.redirect = to.name; state.loginErr = ''; state.loginTab = 'warga'; return { name: 'login' } }
+  if (to.meta.admin && state.role !== 'pengurus') return { name: 'beranda' }
+})
+
+router.afterEach(to => {
+  state.page = to.name
+  state.screen = to.name === 'login' ? 'login' : 'app'
+  state.drawer = false; state.notif = false
+  if (to.name === 'profil') resetProfileForm()
+})
 
 function watchResidents(active) {
   if (unsubscribeResidents) { unsubscribeResidents(); unsubscribeResidents = null }
@@ -226,16 +256,21 @@ function initApp() {
   watchPaguyuban()
   unsubscribeAuth = onAuthStateChanged(auth, async fbUser => {
     watchResidents(!!fbUser)
+    if (!fbUser) state.profile = null
     const wasInitialized = authInitialized
     authInitialized = true
     if (!wasInitialized) {
-      if (!fbUser) { applyRole('public'); return }
       try {
-        const snap = await getDoc(doc(db, 'users', fbUser.uid))
-        applyRole(snap.exists() ? snap.data().role : 'warga')
+        if (!fbUser) state.role = 'public'
+        else {
+          const data = await loadProfile(fbUser.uid)
+          state.role = data ? data.role : 'warga'
+        }
       } catch (e) {
-        applyRole('public')
+        state.role = 'public'
       }
+      resolveAuthReady()
+      applyRole(state.role)
       return
     }
     // perubahan berikutnya (login/logout) sudah ditangani langsung oleh doLogin()/logout();
@@ -262,9 +297,22 @@ const isPublic = computed(() => state.role === 'public')
 const isAdmin = computed(() => state.role === 'pengurus')
 const isLogged = computed(() => !isPublic.value)
 
-const user = computed(() => isAdmin.value
-  ? { ini: 'HS', name: 'H. Sutrisno', full: 'Bapak H. Sutrisno', sub: 'Ketua Paguyuban', unit: 'Blok A1 No. 01 · RT 01 / RW 07', color: '#2A1D14' }
-  : { ini: 'AP', name: 'Andi Pratama', full: 'Bapak Andi Pratama', sub: 'Blok C2 No. 14', unit: 'Blok C2 No. 14 · RT 03 / RW 07', color: '#A84503' })
+const initials = n => n.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
+const user = computed(() => {
+  const base = isAdmin.value
+    ? { ini: 'HS', name: 'H. Sutrisno', full: 'Bapak H. Sutrisno', sub: 'Ketua Paguyuban', unit: 'Blok A1 No. 01 · RT 01 / RW 07', color: '#2A1D14' }
+    : { ini: 'AP', name: 'Andi Pratama', full: 'Bapak Andi Pratama', sub: 'Blok C2 No. 14', unit: 'Blok C2 No. 14 · RT 03 / RW 07', color: '#A84503' }
+  const p = state.profile
+  if (!p) return base
+  const name = (p.name || '').trim() || base.name
+  const unit = (p.unit || '').trim()
+  const jabatan = (p.jabatan || '').trim()
+  return {
+    ...base, name, ini: initials(name), full: p.name ? name : base.full,
+    unit: unit || base.unit,
+    sub: isAdmin.value ? (jabatan || base.sub) : (unit || base.sub)
+  }
+})
 
 const roleLabel = computed(() => isAdmin.value ? 'Panel Pengurus' : isPublic.value ? 'Portal Warga' : 'Portal Warga · Masuk')
 
@@ -293,8 +341,10 @@ function mk(key, label, icon, extra) {
 const portalItems = computed(() => MODS.map(m => mk(m[0], m[1], m[2])))
 const navGroups = computed(() => isAdmin.value
   ? [
-      { title: 'Panel Pengurus', items: [mk('adm_dash', 'Dashboard', 'space_dashboard'), mk('adm_ipl', 'Keuangan IPL', 'account_balance_wallet', { badge: pendingCount.value || false }), mk('adm_keluhan', 'Kelola Keluhan', 'support_agent', { badge: openComplaints.value || false }), mk('adm_warga', 'Kelola Warga', 'manage_accounts'), mk('adm_paguyuban', 'Kelola Paguyuban', 'account_tree'), mk('adm_info', 'Pengumuman', 'campaign')] },
-      { title: 'Portal Warga', items: portalItems.value }
+      { title: 'Ringkasan', items: [mk('adm_dash', 'Dashboard', 'space_dashboard')] },
+      { title: 'Data & Konten', items: [mk('adm_warga', 'Kelola Warga', 'manage_accounts'), mk('adm_paguyuban', 'Kelola Paguyuban', 'account_tree'), mk('adm_info', 'Pengumuman', 'campaign')] },
+      { title: 'Operasional', items: [mk('adm_ipl', 'Keuangan IPL', 'account_balance_wallet', { badge: pendingCount.value || false }), mk('adm_keluhan', 'Kelola Keluhan', 'support_agent', { badge: openComplaints.value || false })] },
+      { title: '', items: [mk('beranda', 'Lihat tampilan warga', 'visibility')] }
     ]
   : [{ title: '', items: portalItems.value }])
 
@@ -309,29 +359,30 @@ function moreItem() {
 const bottomNav = computed(() => isAdmin.value
   ? [bnItem('adm_dash', 'Dashboard', 'space_dashboard'), bnItem('adm_ipl', 'IPL', 'account_balance_wallet'), bnItem('adm_keluhan', 'Keluhan', 'support_agent'), bnItem('adm_info', 'Info', 'campaign'), moreItem()]
   : isPublic.value
-    ? [bnItem('beranda', 'Beranda', 'home'), bnItem('kegiatan', 'Kegiatan', 'event'), bnItem('paguyuban', 'Pengurus', 'account_tree'), bnItem('sosial', 'Info', 'diversity_3'), { label: 'Masuk', icon: 'login', go: () => { state.screen = 'login'; state.redirect = null }, bg: 'transparent', fg: '#A84503' }]
+    ? [bnItem('beranda', 'Beranda', 'home'), bnItem('kegiatan', 'Kegiatan', 'event'), bnItem('paguyuban', 'Pengurus', 'account_tree'), bnItem('sosial', 'Info', 'diversity_3'), { label: 'Masuk', icon: 'login', go: () => requireLogin(null), bg: 'transparent', fg: '#A84503' }]
     : [bnItem('beranda', 'Beranda', 'home'), bnItem('ipl', 'IPL', 'payments'), bnItem('kegiatan', 'Kegiatan', 'event'), bnItem('keluhan', 'Lapor', 'campaign'), moreItem()])
 
 const cur = computed(() => MODS.find(m => m[0] === state.page))
-const pageTitle = computed(() => ADM_TITLES[state.page] || (state.page === 'beranda' ? 'Beranda' : cur.value ? cur.value[1] : ''))
-const crumb = computed(() => state.page.startsWith('adm_') ? 'Panel Pengurus' : 'Portal Warga Teras Country')
+const pageTitle = computed(() => ADM_TITLES[state.page] || PAGE_TITLES[state.page] || (state.page === 'beranda' ? 'Beranda' : cur.value ? cur.value[1] : ''))
+const crumb = computed(() => state.page.startsWith('adm_') || (state.page === 'profil' && isAdmin.value) ? 'Panel Pengurus' : 'Portal Warga Teras Country')
 const greeting = computed(() => {
   const hr = new Date().getHours()
   return hr < 11 ? 'Selamat pagi' : hr < 15 ? 'Selamat siang' : hr < 18 ? 'Selamat sore' : 'Selamat malam'
 })
 
-const is = computed(() => Object.fromEntries([...MODS.map(m => m[0]), ...Object.keys(ADM_TITLES)].map(k => [k, state.page === k])))
+const is = computed(() => Object.fromEntries([...MODS.map(m => m[0]), ...Object.keys(ADM_TITLES), ...Object.keys(PAGE_TITLES)].map(k => [k, state.page === k])))
 const showPublicHome = computed(() => state.page === 'beranda' && isPublic.value)
 const showWargaHome = computed(() => state.page === 'beranda' && isLogged.value)
 const showWargaData = computed(() => state.page === 'warga' || state.page === 'adm_warga')
 const isAdminWarga = computed(() => state.page === 'adm_warga')
 
 // screen / navigation actions
-function openLogin() { state.screen = 'login'; state.redirect = null; state.drawer = false; state.loginErr = ''; if (typeof window !== 'undefined') window.scrollTo(0, 0) }
-function backHome() { state.screen = 'app'; state.page = state.role === 'pengurus' ? 'adm_dash' : 'beranda' }
+function openLogin() { requireLogin(null) }
+function backHome() { router.push({ name: homeFor(state.role) }) }
 async function logout() {
   await signOut(auth)
-  state.role = 'public'; state.page = 'beranda'; state.drawer = false; state.notif = false; state.screen = 'app'
+  state.role = 'public'
+  router.push({ name: 'beranda' })
   flash('Anda telah keluar')
 }
 
@@ -360,10 +411,11 @@ async function doLogin() {
   state.loginErr = ''
   try {
     const cred = await signInWithEmailAndPassword(auth, state.loginId.trim(), state.loginPw)
-    const snap = await getDoc(doc(db, 'users', cred.user.uid))
-    const role = snap.exists() ? snap.data().role : 'warga'
-    const page = role === 'pengurus' ? (state.redirect || 'adm_dash') : (state.redirect || 'beranda')
-    state.role = role; state.screen = 'app'; state.page = page; state.redirect = null; state.loginPw = ''
+    const data = await loadProfile(cred.user.uid)
+    const role = data ? data.role : 'warga'
+    const dest = state.redirect && !(state.redirect.startsWith('adm_') && role !== 'pengurus') ? state.redirect : homeFor(role)
+    state.role = role; state.redirect = null; state.loginPw = ''
+    await router.push({ name: dest })
     flash(role === 'pengurus' ? 'Masuk sebagai Pengurus' : 'Selamat datang')
   } catch (e) {
     state.loginErr = authErrorMessage(e.code)
@@ -537,14 +589,14 @@ const pgGroupOpts = computed(() => Object.keys(PG_GROUPS).map(k => ({
   label: PG_GROUPS[k], bd: state.pgForm.group === k ? '#A84503' : '#EFE6DA',
   pick: () => { state.pgForm = { ...state.pgForm, group: k } }
 })))
-const pgShowBlok = computed(() => state.pgForm.group !== 'bidang')
+const pgShowBlok = computed(() => true)
 const canSavePg = computed(() => !!state.pgForm.jabatan.trim())
 const pgFormTitle = computed(() => state.pgForm.id ? 'Ubah Pengurus' : 'Tambah Pengurus')
 async function savePgForm() {
   if (!canSavePg.value) { flash('Lengkapi jabatan'); return }
   const f = state.pgForm
   const order = f.id ? f.order : Math.max(-1, ...state.paguyuban.map(d => d.order || 0)) + 1
-  const data = { group: f.group, jabatan: f.jabatan.trim(), nama: f.nama.trim() || '—', blok: f.group === 'bidang' ? '' : f.blok.trim(), order }
+  const data = { group: f.group, jabatan: f.jabatan.trim(), nama: f.nama.trim() || '—', blok: f.blok.trim(), order }
   try {
     if (f.id) await updateDoc(doc(db, 'paguyuban', f.id), data)
     else await addDoc(collection(db, 'paguyuban'), data)
@@ -580,7 +632,7 @@ const events = computed(() => EV.map(e => {
     btnLabel: isPublic.value ? 'Masuk untuk ikut' : j ? 'Terdaftar ✓' : 'Ikut Kegiatan',
     btnBg: j ? '#DDF1E4' : '#fff', btnFg: j ? '#0A5C2C' : '#2A1D14', btnBd: j ? '#DDF1E4' : '#EFE6DA',
     join: () => {
-      if (isPublic.value) { state.screen = 'login'; state.redirect = 'kegiatan'; return }
+      if (isPublic.value) { requireLogin('kegiatan'); return }
       state.joined = { ...state.joined, [e[0]]: !j }
       if (!j) flash('Anda terdaftar di ' + e[3])
     }
@@ -646,7 +698,7 @@ const asetList = computed(() => AS.filter(a => state.af === 'Semua' || a[3] === 
 const sosialFilters = computed(() => ['Semua', 'Tukang', 'Sekolah', 'Kesehatan', 'Kuliner'].map(l => ({ label: l, ...chip(state.sf === l), pick: () => { state.sf = l } })))
 const sosialList = computed(() => SO.filter(x => state.sf === 'Semua' || x[0] === state.sf).map(x => ({
   cat: x[0], nama: x[1], desc: x[2], rating: x[3], rec: x[4], contactIcon: isPublic.value ? 'lock' : 'chat',
-  contact: () => { if (isPublic.value) { state.screen = 'login'; state.redirect = 'sosial' } else if (typeof window !== 'undefined') window.open('https://wa.me/6281200000000', '_blank') }
+  contact: () => { if (isPublic.value) requireLogin('sosial'); else if (typeof window !== 'undefined') window.open('https://wa.me/6281200000000', '_blank') }
 })))
 
 // admin: dashboard
@@ -704,6 +756,35 @@ function publishAnn() {
   flash('Pengumuman diterbitkan')
 }
 
+// profil
+const profileEmail = computed(() => auth.currentUser ? auth.currentUser.email : '')
+function resetProfileForm() {
+  const p = state.profile || {}
+  state.profileForm = { name: p.name || user.value.name, phone: p.phone || '', unit: p.unit || '', jabatan: p.jabatan || '' }
+}
+function setProfileField(k) { return e => { state.profileForm = { ...state.profileForm, [k]: e.target.value } } }
+const canSaveProfile = computed(() => !!state.profileForm.name.trim() && !state.profileSaving)
+async function saveProfile() {
+  const f = state.profileForm
+  if (!f.name.trim()) { flash('Nama wajib diisi'); return }
+  const u = auth.currentUser
+  if (!u) return
+  const data = { name: f.name.trim(), phone: f.phone.trim(), unit: f.unit.trim() }
+  if (isAdmin.value) data.jabatan = f.jabatan.trim()
+  state.profileSaving = true
+  try {
+    const ref = doc(db, 'users', u.uid)
+    if (state.profile) await updateDoc(ref, data)
+    else await setDoc(ref, { ...data, role: 'warga' })
+    state.profile = { ...(state.profile || { role: 'warga' }), ...data }
+    flash('Profil diperbarui')
+  } catch (e) {
+    flash('Gagal menyimpan profil')
+  } finally {
+    state.profileSaving = false
+  }
+}
+
 // misc
 function notifyMe() { flash('Anda akan dikabari saat fitur CCTV tersedia') }
 const showLogin = computed(() => state.screen === 'login')
@@ -734,6 +815,9 @@ export function usePortal() {
     wargaStats, q, setQ, wargaList, wargaEmpty, wargaFilters, addWarga,
     wargaForm, wargaFormOpen: computed(() => state.wargaFormOpen), wargaFormTitle, closeWargaForm,
     setWfBlok, setWfNama, setWfJumlah, setWfPhone, wfKoridorOpts, wfStatusOpts, canSaveWarga, saveWargaForm,
+    // profil
+    profileForm: computed(() => state.profileForm), profileEmail, profileSaving: computed(() => state.profileSaving),
+    setProfileField, canSaveProfile, saveProfile, resetProfileForm,
     // paguyuban
     pengurusInti: pgInti, ketuaKoridor: pgKoridor, pengurusBidang: pgBidang,
     pgIsDefault, addPg, seedPg, pgGroups: PG_GROUPS,

@@ -24,8 +24,12 @@ service cloud.firestore {
     // profil user: role, nama, unit, dll — 1 dokumen per akun (id = uid)
     match /users/{uid} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && request.auth.uid == uid;
-      allow update: if isSignedIn() && (request.auth.uid == uid || isPengurus());
+      allow create: if isSignedIn() && request.auth.uid == uid && request.resource.data.role == 'warga';
+      // user biasa boleh ubah profilnya sendiri, tapi tidak boleh mengubah role
+      allow update: if isSignedIn() && (
+        isPengurus() ||
+        (request.auth.uid == uid && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['role']))
+      );
       allow delete: if isPengurus();
     }
 

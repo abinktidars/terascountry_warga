@@ -180,7 +180,7 @@ const { openLogin, goKegiatan, services, publicAnnouncements, upcomingTop, conta
 .services-hint .icon { font-size: 15px; }
 .services-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
   gap: 12px;
 }
 .service-card {

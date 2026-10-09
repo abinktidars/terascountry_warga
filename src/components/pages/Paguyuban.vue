@@ -50,6 +50,7 @@ const { pengurusInti, ketuaKoridor, pengurusBidang } = usePortal()
         <div class="inti-text">
           <span class="inti-nama">{{ b.nama }}</span>
           <span class="inti-jabatan" :style="{ color: b.color }">{{ b.jabatan }}</span>
+          <span v-if="b.blok" class="inti-blok">{{ b.blok }}</span>
         </div>
       </div>
     </div>
