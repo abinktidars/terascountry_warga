@@ -13,7 +13,7 @@ const GROUPS = [
     title: 'Iuran Pengelolaan Lingkungan (IPL)', icon: 'payments', color: '#D45A1A', tint: '#FEEBDD',
     items: [
       ['Apa itu IPL?', 'IPL adalah iuran bulanan warga untuk membiayai keamanan, kebersihan, listrik dan air fasilitas umum, perawatan taman, serta pemeliharaan fasilitas komplek. Rincian pemakaiannya bisa dilihat di menu Laporan Keuangan.'],
-      ['Berapa besar IPL?', 'Rp 250.000 per unit setiap bulan.'],
+      ['Berapa besar IPL?', 'Rp 75.000 per unit setiap bulan.'],
       ['Kapan tagihan terbit dan jatuh tempo?', 'Tagihan terbit setiap tanggal 1 dan jatuh tempo setiap tanggal 10 pada bulan yang sama.'],
       ['Bagaimana cara membayar?', 'Melalui menu Pembayaran IPL dengan Virtual Account BCA, QRIS, atau transfer bank (unggah bukti transfer). Pembayaran transfer akan diverifikasi pengurus.'],
       ['Bagaimana jika terlambat membayar?', 'Tagihan tetap tercatat sebagai tunggakan dan terakumulasi tiap bulan. Hubungi bendahara bila ada kendala agar dicarikan solusi.']

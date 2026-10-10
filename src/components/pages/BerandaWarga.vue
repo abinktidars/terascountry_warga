@@ -21,20 +21,6 @@ const {
         <span class="welcome-tag">4 Penghuni</span>
       </div>
     </div>
-    <div class="ipl-card">
-      <div class="ipl-head">
-        <span class="ipl-label">Tagihan IPL</span>
-        <span class="ipl-status" :style="{ background: iplStatus.bg, color: iplStatus.fg }">{{ iplStatus.label }}</span>
-      </div>
-      <div class="ipl-amount-block">
-        <span class="ipl-amount">{{ outstandingFmt }}</span>
-        <span class="ipl-note">{{ outstandingNote }}</span>
-      </div>
-      <div class="ipl-actions">
-        <button class="btn-dark" @click="openPay">Bayar Sekarang</button>
-        <button class="btn-outline" @click="goIpl">Riwayat</button>
-      </div>
-    </div>
   </section>
 
   <section class="services-section">

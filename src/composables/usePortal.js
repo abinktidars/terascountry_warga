@@ -422,8 +422,8 @@ function moreItem() {
 const bottomNav = computed(() => isAdmin.value
   ? [bnItem('adm_dash', 'Dashboard', 'space_dashboard'), bnItem('adm_ipl', 'IPL', 'account_balance_wallet'), bnItem('adm_keluhan', 'Keluhan', 'support_agent'), bnItem('adm_info', 'Info', 'campaign'), moreItem()]
   : isPublic.value
-    ? [bnItem('beranda', 'Beranda', 'home'), bnItem('kegiatan', 'Kegiatan', 'event'), bnItem('paguyuban', 'Pengurus', 'account_tree'), bnItem('sosial', 'Info', 'diversity_3'), { label: 'Masuk', icon: 'login', go: () => requireLogin(null), bg: 'transparent', fg: '#A84503' }]
-    : [bnItem('beranda', 'Beranda', 'home'), bnItem('ipl', 'IPL', 'payments'), bnItem('kegiatan', 'Kegiatan', 'event'), bnItem('keluhan', 'Lapor', 'campaign'), moreItem()])
+    ? [bnItem('beranda', 'Beranda', 'home'), bnItem('kegiatan', 'Kegiatan', 'event'), bnItem('paguyuban', 'Pengurus', 'account_tree'), bnItem('faq', 'FAQ', 'help'), { label: 'Masuk', icon: 'login', go: () => requireLogin(null), bg: 'transparent', fg: '#A84503' }]
+    : [bnItem('beranda', 'Beranda', 'home'), bnItem('ipl', 'IPL', 'payments'), bnItem('kegiatan', 'Kegiatan', 'event'), bnItem('faq', 'FAQ', 'help'), moreItem()])
 
 const cur = computed(() => MODS.find(m => m[0] === state.page))
 const pageTitle = computed(() => ADM_TITLES[state.page] || PAGE_TITLES[state.page] || (state.page === 'beranda' ? 'Beranda' : cur.value ? cur.value[1] : ''))
@@ -468,6 +468,16 @@ function fillDemo() {
   state.loginId = state.loginTab === 'pengurus' ? 'ketua@terascountry.id' : 'andi@terascountry.id'
   state.loginPw = 'demo1234'
   state.loginErr = ''
+}
+async function loginDemoPengurus() {
+  state.loginTab = 'pengurus'
+  fillDemo()
+  await doLogin()
+}
+async function loginDemoWarga() {
+  state.loginTab = 'warga'
+  fillDemo()
+  await doLogin()
 }
 async function doLogin() {
   if (!state.loginId.trim() || !state.loginPw.trim()) { state.loginErr = 'Isi email dan kata sandi.'; return }
@@ -1001,7 +1011,8 @@ export function usePortal() {
     showPublicHome, showWargaHome, showWargaData, isAdminWarga, showLogin, showApp,
     openLogin, backHome, logout, go, goKegiatan, goIpl,
     // login
-    loginSub, loginTabs, setLoginId, setLoginPw, pwType, pwIcon, togglePw, loginBtn, fillDemo, doLogin,
+    loginSub, loginTabs, setLoginId, setLoginPw, pwType, pwIcon, togglePw, loginBtn, fillDemo,
+    loginDemoPengurus, loginDemoWarga, doLogin,
     // drawer / notif / toast
     drawerOpen, openDrawer, closeDrawer, stop, notifOpen, toggleNotif, notifs, toast, contacts: CONTACTS,
     // ipl

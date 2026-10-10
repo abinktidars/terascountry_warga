@@ -5,7 +5,7 @@ import logoTc from '../assets/logo-tc.png'
 const {
   wide, narrow, backHome,
   loginSub, loginTabs, state, setLoginId, setLoginPw, pwType, pwIcon, togglePw,
-  loginBtn, fillDemo, doLogin
+  loginBtn, fillDemo, loginDemoPengurus, loginDemoWarga, doLogin
 } = usePortal()
 </script>
 
@@ -41,7 +41,7 @@ const {
         </div>
 
         <div class="fields">
-          <label class="field">Email
+          <!-- <label class="field">Email
             <input :value="state.loginId" @input="setLoginId" placeholder="nama@terascountry.id" />
           </label>
           <label class="field">Kata Sandi
@@ -57,8 +57,16 @@ const {
           <div v-if="state.loginErr" class="error">
             <span class="icon">error</span>{{ state.loginErr }}
           </div>
-          <button class="btn-primary" @click="doLogin">{{ loginBtn }}</button>
-          <button class="btn-demo" @click="fillDemo">Isi otomatis akun demo</button>
+          <button class="btn-primary" @click="doLogin">{{ loginBtn }}</button> -->
+          <button class="btn-demo-login btn-demo-warga" @click="loginDemoWarga">
+            <span class="icon">person</span>
+            Masuk sebagai Warga
+          </button>
+          <button class="btn-demo-login" @click="loginDemoPengurus">
+            <span class="icon">visibility</span>
+            Masuk sebagai Pengurus
+          </button>
+          <!-- <button class="btn-demo" @click="fillDemo">Isi otomatis akun demo</button> -->
         </div>
 
         <div class="help-box">Belum punya akun? Akun warga dibuat oleh sekretariat paguyuban. Hubungi sekretariat di Balai Warga atau WhatsApp <strong>0812-0000-0000</strong>.</div>
@@ -291,6 +299,27 @@ const {
   cursor: pointer;
 }
 .btn-primary:hover { background: #8F3A02; }
+.btn-demo-login {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #DDF1E4;
+  border-radius: 12px;
+  background: #DDF1E4;
+  color: #0A5C2C;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-demo-login:hover { background: #C8E8D2; }
+.btn-demo-warga {
+  border-color: #E4EAFF;
+  background: #E4EAFF;
+  color: #22357A;
+}
+.btn-demo-warga:hover { background: #D4DDF8; }
 .btn-demo {
   padding: 12px;
   border: 1px dashed #D9C7B2;
