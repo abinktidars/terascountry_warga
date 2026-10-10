@@ -1,11 +1,34 @@
 <script setup>
 import { usePortal } from '../../composables/usePortal'
 
-const { ann, setAnnTitle, setAnnBody, audOpts, annBtnBg, publishAnn, admAnnouncements } = usePortal()
+const { ann, setAnnTitle, setAnnBody, audOpts, annBtnBg, publishAnn, admAnnouncements, heroImageUrl, heroImageUploading, uploadHeroImage } = usePortal()
+
+function onHeroImageChange(event) {
+  const file = event.target.files?.[0]
+  if (file) uploadHeroImage(file)
+  event.target.value = ''
+}
 </script>
 
 <template>
-  <section class="grid">
+  <div class="content">
+    <section class="hero-settings">
+      <div class="hero-copy">
+        <span class="section-title">Foto Beranda</span>
+        <span class="hero-hint">Gambar utama yang tampil di homepage publik. JPG, PNG, atau WebP, maksimal 5 MB.</span>
+      </div>
+      <div class="hero-preview" :class="{ 'has-image': heroImageUrl }">
+        <img v-if="heroImageUrl" :src="heroImageUrl" alt="Preview foto beranda" />
+        <span v-else>Belum ada foto beranda</span>
+      </div>
+      <label class="upload-btn" :class="{ uploading: heroImageUploading }">
+        <span class="icon">{{ heroImageUploading ? 'hourglass_top' : 'upload' }}</span>
+        {{ heroImageUploading ? 'Mengunggah…' : heroImageUrl ? 'Ganti foto' : 'Upload foto' }}
+        <input type="file" accept="image/jpeg,image/png,image/webp" :disabled="heroImageUploading" @change="onHeroImageChange" />
+      </label>
+    </section>
+
+    <section class="grid">
     <div class="form-card">
       <span class="section-title">Buat Pengumuman</span>
       <label class="field">Judul
@@ -38,10 +61,66 @@ const { ann, setAnnTitle, setAnnBody, audOpts, annBtnBg, publishAnn, admAnnounce
         <button class="del-btn icon" aria-label="Hapus" @click="a.del">delete</button>
       </div>
     </div>
-  </section>
+    </section>
+  </div>
 </template>
 
 <style scoped>
+.content {
+  display: grid;
+  gap: 16px;
+}
+.hero-settings {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.4fr) auto;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 20px;
+  border: 1px solid #EFE6DA;
+  border-radius: 16px;
+  background: #fff;
+}
+.hero-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.hero-hint { font-size: 12px; color: #8A7563; line-height: 1.5; }
+.hero-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 108px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: repeating-linear-gradient(135deg, #F3ECE2 0 12px, #EDE3D6 12px 24px);
+  color: #8A7563;
+  font-size: 12px;
+}
+.hero-preview img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.upload-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 8px;
+  background: #A84503;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.upload-btn.uploading { opacity: 0.65; cursor: wait; }
+.upload-btn input { display: none; }
 .grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 360px), 1fr));
@@ -165,4 +244,9 @@ const { ann, setAnnTitle, setAnnBody, audOpts, annBtnBg, publishAnn, admAnnounce
   font-size: 18px;
 }
 .del-btn:hover { background: #FDE9DC; }
+@media (max-width: 700px) {
+  .hero-settings { grid-template-columns: 1fr; }
+  .hero-preview { min-height: 160px; }
+  .upload-btn { justify-self: start; }
+}
 </style>

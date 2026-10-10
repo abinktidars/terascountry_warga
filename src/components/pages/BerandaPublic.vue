@@ -1,7 +1,7 @@
 <script setup>
 import { usePortal } from '../../composables/usePortal'
 
-const { openLogin, goKegiatan, services, publicAnnouncements, upcomingTop, contacts } = usePortal()
+const { openLogin, goKegiatan, services, publicAnnouncements, upcomingTop, contacts, heroImageUrl } = usePortal()
 </script>
 
 <template>
@@ -15,7 +15,10 @@ const { openLogin, goKegiatan, services, publicAnnouncements, upcomingTop, conta
         <button class="btn-secondary" @click="goKegiatan">Lihat Kegiatan</button>
       </div>
     </div>
-    <div class="hero-image">foto gerbang / suasana Teras Country</div>
+    <div class="hero-image" :class="{ 'has-image': heroImageUrl }">
+      <img v-if="heroImageUrl" :src="heroImageUrl" alt="Suasana Teras Country" />
+      <span v-else>Foto hero belum diunggah</span>
+    </div>
   </section>
 
   <section class="services-section">
@@ -147,6 +150,7 @@ const { openLogin, goKegiatan, services, publicAnnouncements, upcomingTop, conta
   cursor: pointer;
 }
 .hero-image {
+  position: relative;
   min-height: 260px;
   background: repeating-linear-gradient(135deg, #F3ECE2 0 12px, #EDE3D6 12px 24px);
   display: flex;
@@ -156,6 +160,14 @@ const { openLogin, goKegiatan, services, publicAnnouncements, upcomingTop, conta
   font-size: 12px;
   color: #8A7563;
 }
+.hero-image img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.hero-image.has-image { background: #EFE6DA; }
 
 .services-section {
   display: flex;

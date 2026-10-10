@@ -10,7 +10,7 @@ const { pengurusInti, ketuaKoridor, pengurusBidang } = usePortal()
     <img :src="logoTc" alt="Teras Country Warga" class="intro-logo" />
     <div class="intro-text">
       <span class="intro-title">Struktur Paguyuban Teras Country Tahun 2026-2029 </span>
-      <span class="intro-desc">Wadah warga untuk mengelola keamanan, kebersihan, fasilitas, dan kegiatan sosial di lingkungan perumahan.</span>
+      <span class="intro-desc">Wadah warga untuk mengelola keamanan, kebersihan, fasilitas, dan kegiatan sosial di lingkungan perumahan Teras Country Residence.</span>
     </div>
   </section>
 
@@ -63,10 +63,8 @@ const { pengurusInti, ketuaKoridor, pengurusBidang } = usePortal()
   border: 1px solid #EFE6DA;
   border-radius: 20px;
   padding: 24px;
-  display: flex;
   gap: 20px;
-  align-items: center;
-  flex-wrap: wrap;
+ text-align: center;
 }
 .intro-logo {
   width: 80px;
@@ -88,13 +86,20 @@ const { pengurusInti, ketuaKoridor, pengurusBidang } = usePortal()
   flex-direction: column;
   gap: 12px;
 }
-.section-title { font-size: 16px; font-weight: 800; }
+.section-title { 
+  font-size: 16px; 
+  font-weight: 800; 
+  text-align: center;
+}
 .inti-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 12px;
 }
 .inti-card {
+  flex: 1 1 220px;
+  max-width: 360px;
   background: #fff;
   border: 1px solid #EFE6DA;
   border-radius: 16px;
@@ -123,4 +128,28 @@ const { pengurusInti, ketuaKoridor, pengurusBidang } = usePortal()
 .inti-nama { font-size: 15px; font-weight: 700; }
 .inti-jabatan { font-size: 12px; font-weight: 700; }
 .inti-blok { font-size: 12px; color: #8A7563; }
+
+@media (max-width: 700px) {
+  .intro-card {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .intro-logo {
+    align-self: center;
+  }
+  .intro-text {
+    min-width: 0;
+  }
+  .section {
+    align-items: center;
+    text-align: center;
+  }
+  .section-title {
+    text-align: center;
+  }
+  .inti-grid {
+    width: 100%;
+  }
+}
 </style>

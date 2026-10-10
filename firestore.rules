@@ -58,6 +58,11 @@ service cloud.firestore {
       allow write: if isPengurus();
     }
 
+    match /siteContent/homepage {
+      allow read: if true;
+      allow write: if isPengurus();
+    }
+
     // data referensi: kegiatan, piket, aset, sosial, paguyuban — baca publik, tulis pengurus saja
     match /{collection}/{id} {
       allow read: if collection in ['events', 'piket', 'assets', 'social', 'paguyuban'];

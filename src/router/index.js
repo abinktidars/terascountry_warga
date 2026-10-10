@@ -28,6 +28,7 @@ export const routes = [
   { path: '/admin/warga', name: 'adm_warga', component: page('Warga'), meta: { auth: true, admin: true } },
   { path: '/admin/paguyuban', name: 'adm_paguyuban', component: page('AdmPaguyuban'), meta: { auth: true, admin: true } },
   { path: '/admin/pengumuman', name: 'adm_info', component: page('AdmInfo'), meta: { auth: true, admin: true } },
+  { path: '/admin/piket', name: 'adm_piket', component: page('AdmPiket'), meta: { auth: true, admin: true } },
 
   { path: '/:pathMatch(.*)*', redirect: { name: 'beranda' } }
 ]

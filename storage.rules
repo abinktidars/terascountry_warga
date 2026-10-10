@@ -7,6 +7,11 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function isPengurus() {
+      return isSignedIn()
+        && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role == 'pengurus';
+    }
+
     // bukti transfer IPL: tiap warga hanya boleh unggah ke folder miliknya sendiri
     match /payments/{uid}/{fileName} {
       allow read: if isSignedIn();
@@ -19,6 +24,14 @@ service firebase.storage {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && request.auth.uid == uid
         && request.resource.size < 5 * 1024 * 1024;
+    }
+
+    // foto hero publik: hanya pengurus yang boleh mengganti
+    match /site-content/hero/{fileName} {
+      allow read: if true;
+      allow write: if isPengurus()
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
     }
 
     match /{allPaths=**} {

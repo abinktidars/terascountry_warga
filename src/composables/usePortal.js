@@ -1,7 +1,8 @@
 import { reactive, computed } from 'vue'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import { doc, getDoc, setDoc, collection, onSnapshot, addDoc, updateDoc, deleteDoc } from 'firebase/firestore'
-import { auth, db } from '../firebase'
+import { deleteObject, getDownloadURL, ref as storageRef, uploadBytes } from 'firebase/storage'
+import { auth, db, storage } from '../firebase'
 import { router, routes } from '../router'
 
 // ───────────────────────── constants ─────────────────────────
@@ -29,7 +30,7 @@ const MODS = [
 ]
 
 const PAGE_TITLES = { profil: 'Profil Saya' }
-const ADM_TITLES = { adm_dash: 'Dashboard Pengurus', adm_ipl: 'Keuangan IPL', adm_keluhan: 'Kelola Keluhan', adm_warga: 'Kelola Data Warga', adm_paguyuban: 'Kelola Paguyuban', adm_info: 'Pengumuman' }
+const ADM_TITLES = { adm_dash: 'Dashboard Pengurus', adm_ipl: 'Keuangan IPL', adm_keluhan: 'Kelola Keluhan', adm_warga: 'Kelola Data Warga', adm_paguyuban: 'Kelola Paguyuban', adm_info: 'Pengumuman', adm_piket: 'Jadwal Piket' }
 
 // [blok, unit, nama]  (default status is derived separately so the C2 No. 14
 // special-case from the original prototype — which flips with paidUpTo — can
@@ -62,7 +63,16 @@ const PAST_EVENTS = [
 ]
 
 const PIKET_DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu', 'Minggu']
-const PIKET_CREW = [['Joko & Rudi', 'Slamet & Yanto', 'Eko & Wawan'], ['Slamet & Yanto', 'Eko & Wawan', 'Joko & Rudi'], ['Eko & Wawan', 'Joko & Rudi', 'Slamet & Yanto']]
+const PIKET_SECURITY = ['Pena', 'Boray', 'Eli', 'Benny', 'Roy', 'Nosin', 'Rudi']
+const DEFAULT_PIKET_GUARDS = PIKET_SECURITY.map(name => ({ id: name.toLowerCase(), name, phone: '' }))
+const DEFAULT_PIKET_ROWS = PIKET_DAYS.map((day, dayIndex) => {
+  const crew = Array.from({ length: 6 }, (_, i) => PIKET_SECURITY[(dayIndex + i) % PIKET_SECURITY.length])
+  return {
+    day,
+    shifts: [0, 1, 2].map(shiftIndex => crew.slice(shiftIndex * 2, shiftIndex * 2 + 2).join(' & '))
+  }
+})
+const DEFAULT_PIKET_RANGE = '29 Sep – 5 Okt 2026'
 const SHIFTS = [
   { name: 'Pagi', hours: '06.00 – 14.00', icon: 'wb_sunny', color: '#D45A1A', tint: '#FEEBDD' },
   { name: 'Siang', hours: '14.00 – 22.00', icon: 'wb_twilight', color: '#7048D6', tint: '#EEE8FD' },
@@ -153,7 +163,10 @@ const state = reactive({
   paguyuban: [], pgLoaded: false,
   pgForm: { id: null, group: 'inti', jabatan: '', nama: '', blok: '', order: 0 },
   pgFormOpen: false,
-  profile: null, profileForm: { name: '', phone: '', unit: '', jabatan: '' }, profileSaving: false
+  profile: null, profileForm: { name: '', phone: '', unit: '', jabatan: '' }, profileSaving: false,
+  heroImageUrl: '', heroImagePath: '', heroImageUploading: false,
+  piketRange: DEFAULT_PIKET_RANGE, piketRows: DEFAULT_PIKET_ROWS.map(row => ({ ...row, shifts: [...row.shifts] })),
+  piketGuards: DEFAULT_PIKET_GUARDS.map(guard => ({ ...guard })), piketSaving: false
 })
 
 let toastTimer = null
@@ -161,6 +174,8 @@ let onResizeHandler = null
 let unsubscribeAuth = null
 let unsubscribeResidents = null
 let unsubscribePaguyuban = null
+let unsubscribeHomepageContent = null
+let unsubscribePiket = null
 let authInitialized = false
 
 // ───────────────────────── small helpers ─────────────────────────
@@ -247,6 +262,48 @@ function watchPaguyuban() {
   }, () => { state.pgLoaded = true })
 }
 
+function watchHomepageContent() {
+  if (unsubscribeHomepageContent) unsubscribeHomepageContent()
+  unsubscribeHomepageContent = onSnapshot(doc(db, 'siteContent', 'homepage'), snap => {
+    const data = snap.exists() ? snap.data() : {}
+    state.heroImageUrl = data.heroImageUrl || ''
+    state.heroImagePath = data.heroImagePath || ''
+  }, () => {
+    state.heroImageUrl = ''
+    state.heroImagePath = ''
+  })
+}
+
+function watchPiket() {
+  if (unsubscribePiket) unsubscribePiket()
+  unsubscribePiket = onSnapshot(doc(db, 'piket', 'current'), snap => {
+    if (!snap.exists()) {
+      state.piketRange = DEFAULT_PIKET_RANGE
+      state.piketRows = DEFAULT_PIKET_ROWS.map(row => ({ ...row, shifts: [...row.shifts] }))
+      state.piketGuards = DEFAULT_PIKET_GUARDS.map(guard => ({ ...guard }))
+      return
+    }
+    const data = snap.data()
+    state.piketRange = typeof data.range === 'string' ? data.range : DEFAULT_PIKET_RANGE
+    state.piketRows = PIKET_DAYS.map((day, i) => ({
+      day,
+      shifts: SHIFTS.map((_, shiftIndex) => {
+        const name = data.rows?.[i]?.shifts?.[shiftIndex]
+        return typeof name === 'string' ? name : DEFAULT_PIKET_ROWS[i].shifts[shiftIndex]
+      })
+    }))
+    state.piketGuards = Array.isArray(data.guards)
+      ? data.guards
+        .filter(guard => guard && typeof guard.name === 'string' && guard.name.trim())
+        .map((guard, i) => ({
+          id: typeof guard.id === 'string' ? guard.id : `guard-${i}`,
+          name: guard.name.trim(),
+          phone: typeof guard.phone === 'string' ? guard.phone : ''
+        }))
+      : DEFAULT_PIKET_GUARDS.map(guard => ({ ...guard }))
+  }, () => flash('Gagal memuat jadwal piket'))
+}
+
 function initApp() {
   onResizeHandler = () => { state.w = window.innerWidth }
   if (typeof window !== 'undefined') {
@@ -254,6 +311,8 @@ function initApp() {
     onResizeHandler()
   }
   watchPaguyuban()
+  watchHomepageContent()
+  watchPiket()
   unsubscribeAuth = onAuthStateChanged(auth, async fbUser => {
     watchResidents(!!fbUser)
     if (!fbUser) state.profile = null
@@ -284,6 +343,8 @@ function teardownApp() {
   if (unsubscribeAuth) unsubscribeAuth()
   if (unsubscribeResidents) unsubscribeResidents()
   if (unsubscribePaguyuban) unsubscribePaguyuban()
+  if (unsubscribeHomepageContent) unsubscribeHomepageContent()
+  if (unsubscribePiket) unsubscribePiket()
   clearTimeout(toastTimer)
 }
 
@@ -296,6 +357,8 @@ const narrow = computed(() => !wide.value)
 const isPublic = computed(() => state.role === 'public')
 const isAdmin = computed(() => state.role === 'pengurus')
 const isLogged = computed(() => !isPublic.value)
+const heroImageUrl = computed(() => state.heroImageUrl)
+const heroImageUploading = computed(() => state.heroImageUploading)
 
 const initials = n => n.trim().split(/\s+/).slice(0, 2).map(w => w[0]).join('').toUpperCase()
 const user = computed(() => {
@@ -343,7 +406,7 @@ const navGroups = computed(() => isAdmin.value
   ? [
       { title: 'Ringkasan', items: [mk('adm_dash', 'Dashboard', 'space_dashboard')] },
       { title: 'Data & Konten', items: [mk('adm_warga', 'Kelola Warga', 'manage_accounts'), mk('adm_paguyuban', 'Kelola Paguyuban', 'account_tree'), mk('adm_info', 'Pengumuman', 'campaign')] },
-      { title: 'Operasional', items: [mk('adm_ipl', 'Keuangan IPL', 'account_balance_wallet', { badge: pendingCount.value || false }), mk('adm_keluhan', 'Kelola Keluhan', 'support_agent', { badge: openComplaints.value || false })] },
+      { title: 'Operasional', items: [mk('adm_ipl', 'Keuangan IPL', 'account_balance_wallet', { badge: pendingCount.value || false }), mk('adm_keluhan', 'Kelola Keluhan', 'support_agent', { badge: openComplaints.value || false }), mk('adm_piket', 'Jadwal Piket', 'event_note')] },
       { title: '', items: [mk('beranda', 'Lihat tampilan warga', 'visibility')] }
     ]
   : [{ title: '', items: portalItems.value }])
@@ -642,20 +705,155 @@ const upcomingTop = computed(() => events.value.slice(0, 2))
 const pastEvents = computed(() => PAST_EVENTS)
 
 // piket
-const todayIdx = 0
 const shiftIdx = computed(() => { const h = new Date().getHours(); return h >= 6 && h < 14 ? 0 : h >= 14 && h < 22 ? 1 : 2 })
+const todayIdx = computed(() => (new Date().getDay() + 6) % 7)
+const piketEditor = computed(() => ({ range: state.piketRange, rows: state.piketRows }))
+const securityGuards = computed(() => state.piketGuards)
+function setPiketRange(event) { state.piketRange = event.target.value }
+async function savePiketSchedule() {
+  if (!state.piketRange.trim()) { flash('Isi rentang tanggal jadwal'); return }
+  state.piketSaving = true
+  try {
+    await setDoc(doc(db, 'piket', 'current'), {
+      range: state.piketRange.trim(),
+      rows: state.piketRows.map(row => ({
+        day: row.day,
+        shifts: row.shifts.map(name => name.trim())
+      }))
+    }, { merge: true })
+    flash('Jadwal piket diperbarui')
+  } catch (e) {
+    flash('Gagal menyimpan jadwal piket')
+  } finally {
+    state.piketSaving = false
+  }
+}
+async function savePiketGuard(id, name, phone) {
+  const cleanName = name.trim()
+  if (!cleanName) { flash('Isi nama satpam'); return false }
+  if (state.piketGuards.some(guard => guard.id !== id && guard.name.toLowerCase() === cleanName.toLowerCase())) {
+    flash('Nama satpam sudah ada')
+    return false
+  }
+
+  const guards = [...state.piketGuards]
+  const existingIndex = guards.findIndex(guard => guard.id === id)
+  const guardId = id || `guard-${Date.now()}`
+  const oldName = existingIndex >= 0 ? guards[existingIndex].name : ''
+  const updatedGuard = { id: guardId, name: cleanName, phone: phone.trim() }
+  if (existingIndex >= 0) guards[existingIndex] = updatedGuard
+  else guards.push(updatedGuard)
+
+  const rows = oldName && oldName !== cleanName
+    ? state.piketRows.map(row => ({
+      ...row,
+      shifts: row.shifts.map(shift => shift.split(' & ').map(person => person === oldName ? cleanName : person).join(' & '))
+    }))
+    : state.piketRows
+
+  try {
+    await setDoc(doc(db, 'piket', 'current'), {
+      guards,
+      ...(rows !== state.piketRows ? { rows: rows.map(row => ({ day: row.day, shifts: row.shifts })) } : {})
+    }, { merge: true })
+    state.piketGuards = guards
+    if (rows !== state.piketRows) state.piketRows = rows
+    flash(existingIndex >= 0 ? 'Data satpam diperbarui' : 'Satpam ditambahkan')
+    return true
+  } catch (e) {
+    flash('Gagal menyimpan data satpam')
+    return false
+  }
+}
+async function deletePiketGuard(id) {
+  const guard = state.piketGuards.find(item => item.id === id)
+  if (!guard) return
+  const guards = state.piketGuards.filter(item => item.id !== id)
+  const rows = state.piketRows.map(row => ({
+    ...row,
+    shifts: row.shifts.map(shift => {
+      const remaining = shift.split(' & ').filter(person => person !== guard.name)
+      return remaining.length ? remaining.join(' & ') : '—'
+    })
+  }))
+
+  try {
+    await setDoc(doc(db, 'piket', 'current'), {
+      guards,
+      rows: rows.map(row => ({ day: row.day, shifts: row.shifts }))
+    }, { merge: true })
+    state.piketGuards = guards
+    state.piketRows = rows
+    flash('Data satpam dihapus')
+  } catch (e) {
+    flash('Gagal menghapus data satpam')
+  }
+}
+function piketPhoneDigits(phone) {
+  const digits = phone.replace(/\D/g, '')
+  if (!digits) return ''
+  const international = digits.startsWith('0')
+    ? `62${digits.slice(1)}`
+    : digits.startsWith('8') ? `62${digits}` : digits
+  return international.length >= 8 && international.length <= 15 ? international : ''
+}
 const piketCells = computed(() => {
   const cells = []
   PIKET_DAYS.forEach((d, i) => {
-    const t = i === todayIdx
+    const t = i === todayIdx.value
     cells.push({ text: d + (t ? ' · Hari ini' : ''), bg: t ? '#DDF1E4' : 'transparent', fg: t ? '#0A5C2C' : '#2A1D14', w: 700 })
-    for (let k = 0; k < 3; k++) cells.push({ text: PIKET_CREW[i % 3][k], bg: t ? '#EEF8F1' : 'transparent', fg: '#2A1D14', w: t && k === shiftIdx.value ? 800 : 500 })
+    for (let k = 0; k < 3; k++) cells.push({ text: state.piketRows[i]?.shifts[k] || '—', bg: t ? '#EEF8F1' : 'transparent', fg: '#2A1D14', w: t && k === shiftIdx.value ? 800 : 500 })
   })
   return cells
 })
-const onDuty = computed(() => ({ names: PIKET_CREW[todayIdx % 3][shiftIdx.value], shift: ['Pagi', 'Siang', 'Malam'][shiftIdx.value] }))
+const onDuty = computed(() => ({ names: state.piketRows[todayIdx.value]?.shifts[shiftIdx.value] || '—', shift: ['Pagi', 'Siang', 'Malam'][shiftIdx.value] }))
 
 // announcements
+async function uploadHeroImage(file) {
+  if (!file || !auth.currentUser || !isAdmin.value) {
+    flash('Masuk sebagai pengurus untuk mengganti foto')
+    return
+  }
+  if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+    flash('Pilih foto JPG, PNG, atau WebP')
+    return
+  }
+  if (file.size >= 5 * 1024 * 1024) {
+    flash('Ukuran foto harus di bawah 5 MB')
+    return
+  }
+  if (state.heroImageUploading) return
+
+  state.heroImageUploading = true
+  let uploadedImageRef
+  const previousImagePath = state.heroImagePath
+  try {
+    const uid = auth.currentUser.uid
+    const fileName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-') || 'hero-image'
+    const imagePath = `site-content/hero/${Date.now()}-${fileName}`
+    uploadedImageRef = storageRef(storage, imagePath)
+    await uploadBytes(uploadedImageRef, file, { contentType: file.type })
+    const imageUrl = await getDownloadURL(uploadedImageRef)
+    await setDoc(doc(db, 'siteContent', 'homepage'), {
+      heroImageUrl: imageUrl,
+      heroImagePath: imagePath,
+      updatedAt: Date.now(),
+      updatedBy: uid
+    }, { merge: true })
+    state.heroImageUrl = imageUrl
+    state.heroImagePath = imagePath
+    if (previousImagePath && previousImagePath !== imagePath) {
+      await deleteObject(storageRef(storage, previousImagePath)).catch(() => {})
+    }
+    flash('Foto beranda diperbarui')
+  } catch (error) {
+    if (uploadedImageRef) await deleteObject(uploadedImageRef).catch(() => {})
+    flash('Gagal mengunggah foto beranda')
+  } finally {
+    state.heroImageUploading = false
+  }
+}
+
 function annView(a) {
   return {
     ...a,
@@ -810,6 +1008,7 @@ export function usePortal() {
     outstandingFmt, outstandingNote, iplStatus, paidYearFmt, paidCount, iplRows,
     openPay, closePay, payOpen, paySuccess, payForm, payMonths, methods, payTotalFmt, payBtnBg, confirmPay,
     // beranda
+    heroImageUrl, heroImageUploading, uploadHeroImage,
     upcomingTop, pastEvents: pastEvents, onDuty, publicAnnouncements, wargaAnnouncements, admAnnouncements,
     // warga
     wargaStats, q, setQ, wargaList, wargaEmpty, wargaFilters, addWarga,
@@ -826,7 +1025,9 @@ export function usePortal() {
     // kegiatan
     events,
     // piket
-    shifts: SHIFTS, piketCells,
+    shifts: SHIFTS, piketCells, piketRange: computed(() => state.piketRange), piketEditor, securityGuards,
+    piketSaving: computed(() => state.piketSaving), setPiketRange, savePiketSchedule,
+    savePiketGuard, deletePiketGuard, piketPhoneDigits,
     // cctv
     cams: CAMS, notifyMe,
     // keluhan
